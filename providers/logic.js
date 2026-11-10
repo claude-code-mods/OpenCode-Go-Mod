@@ -1,12 +1,12 @@
-// The pure half of the OpenCode provider mod: no `$`, no network, no clock.
+// The pure half of the OpenCode Go provider mod: no `$`, no network, no clock.
 // Everything here is a function of its arguments and of `config.js`, which is
-// why it is unit-tested directly (see `opencode-mod.test.mjs` beside the
-// plugin folder) and why a vendor adapting this mod rarely needs to touch it.
+// why it is unit-tested directly (`tests/opencode-go-mod.test.mjs`).
 //
 //   buildModels      the vendor's model list + the catalog records -> the rows
 //                    `provider.models` answers (limits, wire, tiers)
-//   effortPatch      a thinking tier -> the body fields one wire format takes
-//   sessionHeader    the shape of the session id the server asks for
+//   gatewayRootOf    the base URL -> the gateway root and its layout
+//   effortPatch      a thinking tier -> the body fields one model takes
+//   sessionHeaders   the session value -> every header and body field that carries it
 //   mapUsage         the usage document -> a plan-usage snapshot
 //   verifyFromStatus an HTTP status -> a verify answer
 
@@ -22,8 +22,11 @@ import {
   VENDOR_GROUPS,
   PROVIDERS,
   REASONING_REPLAY_BY_FIELD,
-  REQUEST_HEADER,
+  CLIENT_HEADER,
+  GATEWAY,
+  PROMPT_CACHE_KEY_PATH,
   SESSION_HEADER,
+  THINKING_BY_ID_PREFIX,
   TIER_LABELS,
   TIER_TO_WIRE,
   USAGE,
@@ -76,16 +79,42 @@ function trimBase(baseUrl, suffix) {
 }
 
 /**
+ * The gateway root of a base URL, and whether it has one path per API family
+ * (`family`) or serves everything under the base URL (`flat`). See `GATEWAY`.
+ */
+export function gatewayRootOf(baseUrl) {
+  const base = String(baseUrl).replace(/\/+$/, '')
+  if (base.endsWith(GATEWAY.openaiSuffix)) return { root: base.slice(0, base.length - GATEWAY.openaiSuffix.length), layout: 'family' }
+  return { root: base, layout: 'flat' }
+}
+
+/** Where the usage document is, for the base URL in force. */
+export function usageUrlOf(baseUrl, facts) {
+  const { root, layout } = gatewayRootOf(baseUrl)
+  return layout === 'family' ? `${root}${GATEWAY.usageSuffix}` : `${root}${facts.usagePath}`
+}
+
+/** A format's base URL: its family path under the root, else the provider's base trimmed as the format needs. */
+export function formatBaseUrl(format, providerBaseUrl) {
+  const facts = WIRE_BY_FORMAT[format] ?? {}
+  const { root, layout } = gatewayRootOf(providerBaseUrl)
+  if (layout === 'family' && facts.family) return `${root}${facts.family}`
+  return trimBase(String(providerBaseUrl).replace(/\/+$/, ''), facts.baseUrlTrim)
+}
+
+/**
  * One model's `wire`: its format and what that format needs (config.js
- * `WIRE_BY_FORMAT`). Only what differs from the provider's own wire is set;
- * the base URL is set only when the format needs another one.
+ * `WIRE_BY_FORMAT`), plus the client header. The base URL is set only when it
+ * differs from the provider's.
  */
 export function wireOf(format, providerBaseUrl, record) {
   const facts = WIRE_BY_FORMAT[format] ?? {}
   const wire = { format }
-  const baseUrl = trimBase(providerBaseUrl, facts.baseUrlTrim)
-  if (baseUrl !== providerBaseUrl) wire.baseUrl = baseUrl
-  if (facts.headers) wire.headers = { ...facts.headers }
+  const baseUrl = formatBaseUrl(format, providerBaseUrl)
+  if (baseUrl !== String(providerBaseUrl).replace(/\/+$/, '')) wire.baseUrl = baseUrl
+  const headers = { ...(facts.headers ?? {}) }
+  if (CLIENT_HEADER.value !== '') headers[CLIENT_HEADER.name] = CLIENT_HEADER.value
+  if (Object.keys(headers).length > 0) wire.headers = headers
   const compat = { ...(facts.compat ?? {}) }
   const field = isRecord(record) ? record.interleavedField : undefined
   if (format === 'openai-chat' && typeof field === 'string' && Object.hasOwn(REASONING_REPLAY_BY_FIELD, field)) {
@@ -199,9 +228,16 @@ export function sessionHeader(hex, base62) {
   return `${SESSION_HEADER.prefix}${hex}${base62}`
 }
 
-/** The request header value: its prefix, then the derived hex and base62 parts. */
-export function requestHeader(hex, base62) {
-  return `${REQUEST_HEADER.prefix}${hex}${base62}`
+/**
+ * Every header and body edit that carries the session value on one wire: the
+ * gateway's session and affinity headers, and on the Responses wire also its
+ * request-id header and `prompt_cache_key`.
+ */
+export function sessionHeaders(format, value) {
+  const names = format === 'openai-responses' ? [...SESSION_HEADER.names, ...SESSION_HEADER.responsesNames] : SESSION_HEADER.names
+  const headers = Object.fromEntries(names.map(name => [name, value]))
+  const patch = format === 'openai-responses' ? [{ op: 'set', path: PROMPT_CACHE_KEY_PATH, value }] : []
+  return { headers, patch }
 }
 
 /** Whether `value` has the documented shape of the session header. */
@@ -209,22 +245,41 @@ export function isSessionHeader(value) {
   return new RegExp(`^${SESSION_HEADER.prefix}[0-9a-f]{${SESSION_HEADER.hexLength}}[0-9A-Za-z]{${SESSION_HEADER.base62Length}}$`).test(value)
 }
 
+/** How `modelId` takes a thinking tier beyond its wire's default (`THINKING_BY_ID_PREFIX`), or undefined. */
+export function thinkingStyleOf(modelId) {
+  const id = String(modelId ?? '')
+  const hit = THINKING_BY_ID_PREFIX.find(([prefix]) => id.startsWith(prefix))
+  return hit ? hit[1] : undefined
+}
+
 /**
  * The body edits (JSON Pointer `set`) that give one request its thinking
- * tier, for the wire format the request was built for. Returns [] when there
- * is nothing to set. The platform's codecs write none of this for a provider
- * mod, so a model offered with tiers needs it here.
+ * tier, for the wire format the request was built for and the model it goes
+ * to. Returns [] when there is nothing to set. The platform's codecs write
+ * none of this for a provider mod, so a model offered with tiers needs it here.
  *
  * @param {string} format          `e.format` of the request event
  * @param {string | undefined} tier `e.effort` (runtime vocabulary)
  * @param {number | undefined} maxOutputTokens `e.maxOutputTokens`
+ * @param {string | undefined} modelId `e.model`
  */
-export function effortPatch(format, tier, maxOutputTokens) {
+export function effortPatch(format, tier, maxOutputTokens, modelId) {
   if (tier === undefined || !TIER_ORDER.includes(tier)) return []
   const wire = TIER_TO_WIRE[tier]
-  if (format === 'openai-chat') return [{ op: 'set', path: '/reasoning_effort', value: wire }]
+  const style = thinkingStyleOf(modelId)
+  if (format === 'openai-chat') {
+    if (style === 'toggle') {
+      if (tier === 'none') return [{ op: 'set', path: '/thinking', value: { type: 'disabled' } }]
+      return [{ op: 'set', path: '/thinking', value: { type: 'enabled' } }, { op: 'set', path: '/reasoning_effort', value: wire }]
+    }
+    return [{ op: 'set', path: '/reasoning_effort', value: wire }]
+  }
   if (format === 'openai-responses') return [{ op: 'set', path: '/reasoning', value: { effort: wire } }]
   if (format === 'anthropic-messages') {
+    if (style === 'adaptive') {
+      if (tier === 'none') return []
+      return [{ op: 'set', path: '/thinking', value: { type: 'adaptive' } }, { op: 'set', path: '/output_config', value: { effort: wire } }]
+    }
     const budget = ANTHROPIC_BUDGET_BY_TIER[tier]
     // The wire needs max_tokens > budget_tokens >= 1024; with no known cap, or
     // a cap too small for the tier, leave the model at its own default.

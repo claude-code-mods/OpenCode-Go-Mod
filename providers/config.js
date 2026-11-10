@@ -37,7 +37,7 @@
 export const PROVIDERS = {
   go: {
     displayName: 'OpenCode Go',
-    baseUrl: 'https://opencode.ai/zen/go/v1',
+    baseUrl: 'https://opencode.ai/inference/go/openai/v1',
     metadataKey: 'opencode-go',
     usagePath: '/usage',
     checkKeyWithUsage: true,
@@ -48,37 +48,42 @@ export const PROVIDERS = {
 export const LISTING_PATH = '/models'
 
 /**
- * How this mod names the client to the server: its own name, and by default the
- * platform's own User-Agent (an empty `value` sends no override).
- *   - `CLIENT_HEADER`     the server's client-name header.
- *   - `USER_AGENT_HEADER` the User-Agent a mod may replace; '' keeps the default.
- * A vendor adapting this mod puts its own product's values here.
+ * The gateway's layout: one root, one path per API family under it. A base
+ * URL ending in `openaiSuffix` is that layout, and its root is the base URL
+ * without the suffix; the usage document is `<root><usageSuffix>`. Any other
+ * base URL is a single-path gateway: every family and the usage document sit
+ * under the base URL itself.
  */
-export const CLIENT_HEADER = { name: 'x-opencode-client', value: 'velloc' }
+export const GATEWAY = { openaiSuffix: '/openai/v1', usageSuffix: '/v1/usage' }
+
+/**
+ * How this mod names the client to the server.
+ *   - `CLIENT_HEADER` is sent with every model's `wire.headers`, so it is part
+ *     of the request as the platform builds it, and keyword masking rewrites it
+ *     like any provider header.
+ *   - `USER_AGENT_HEADER` the User-Agent a mod may replace; '' keeps the default.
+ */
+export const CLIENT_HEADER = { name: 'x-opencode-client', value: 'cli' }
 export const USER_AGENT_HEADER = { name: 'user-agent', value: '' }
 
 /**
- * The project header (optional). Velloc names no project to the server, so it
- * sends the documented "no project" value, which also keeps the person's
- * folder path out of the request.
+ * The session id the gateway routes and caches by, sent under every name the
+ * gateway reads. Its value is a stable pseudo-id derived from the session by
+ * the platform: the prefix, then `hexLength` hex digits, then `base62Length`
+ * characters of [0-9A-Za-z].
+ *   - `names`: sent on every request.
+ *   - `responsesNames`: also sent on the Responses wire, whose body carries the
+ *     same value as `prompt_cache_key` (`PROMPT_CACHE_KEY_PATH`).
  */
-export const PROJECT_HEADER = { name: 'x-opencode-project', value: 'global' }
-
-/**
- * The request header (optional): one id per send, so the server can tell two
- * requests of one session apart. Same shape as the session id with its own
- * prefix; derived from the platform's per-send request id, so a retry (which
- * is a new send) gets a new value and the id reveals nothing about Velloc's.
- */
-export const REQUEST_HEADER = { name: 'x-opencode-request', prefix: 'msg_', hexLength: 12, base62Length: 14 }
-
-/**
- * The session header the server asks for (required on Go). Its value is a
- * stable pseudo-id derived from the session by the platform; the vendor's
- * documented shape is the prefix, then `hexLength` hex digits, then
- * `base62Length` characters of [0-9A-Za-z].
- */
-export const SESSION_HEADER = { name: 'x-opencode-session', prefix: 'ses_', hexLength: 12, base62Length: 14 }
+export const SESSION_HEADER = {
+  name: 'x-opencode-session',
+  names: ['x-opencode-session', 'x-session-affinity'],
+  responsesNames: ['x-client-request-id'],
+  prefix: 'ses_',
+  hexLength: 12,
+  base62Length: 14,
+}
+export const PROMPT_CACHE_KEY_PATH = '/prompt_cache_key'
 
 /**
  * Which wire format each model speaks, decided by the `npm` field of the
@@ -96,6 +101,7 @@ export const FORMAT_BY_NPM = {
 export const FORMAT_BY_ID_PREFIX = [
   ['gpt-', 'openai-responses'],
   ['grok-', 'openai-responses'],
+  ['muse-', 'openai-responses'],
   ['claude-', 'anthropic-messages'],
   ['gemini-', 'gemini'],
 ]
@@ -104,8 +110,10 @@ export const DEFAULT_FORMAT = 'openai-chat'
 /**
  * What each format needs on top of the platform's codec of that name. Every
  * key is optional.
- *   - `baseUrlTrim`: this format's SDK appends `/v1` itself, so its base URL
- *     is the provider's with that suffix removed (same origin, as required).
+ *   - `family`: the format's path under the gateway root (see `GATEWAY`); the
+ *     codec appends its own path to it.
+ *   - `baseUrlTrim`: on a single-path gateway, this format's SDK appends `/v1`
+ *     itself, so its base URL is the provider's with that suffix removed.
  *   - `headers`: extra request headers for this format. The codecs already
  *     send `Authorization: Bearer` (openai-*) and `x-api-key` +
  *     `anthropic-version` (anthropic-messages); the Google codec puts the key
@@ -114,11 +122,24 @@ export const DEFAULT_FORMAT = 'openai-chat'
  *     developerRole, reasoningEffortField, reasoningReplay).
  */
 export const WIRE_BY_FORMAT = {
-  'openai-chat': { compat: { maxTokensField: 'max_tokens', developerRole: false } },
-  'openai-responses': { compat: { developerRole: false } },
-  'anthropic-messages': { baseUrlTrim: '/v1' },
-  gemini: { headers: { 'x-goog-api-key': '{{secret:api_key}}' } },
+  'openai-chat': { family: '/openai/v1', compat: { maxTokensField: 'max_tokens', developerRole: false } },
+  'openai-responses': { family: '/openai/v1', compat: { developerRole: false } },
+  'anthropic-messages': { family: '/anthropic', baseUrlTrim: '/v1' },
+  gemini: { family: '/google/v1beta', headers: { 'x-goog-api-key': '{{secret:api_key}}' } },
 }
+
+/**
+ * How a model takes a thinking tier when it differs from its wire's default
+ * (see `effortPatch`), by id prefix, first match wins.
+ *   - `toggle`: `thinking: { type: 'enabled' | 'disabled' }` beside
+ *     `reasoning_effort`; the `none` tier turns thinking off.
+ *   - `adaptive`: `thinking: { type: 'adaptive' }` with
+ *     `output_config: { effort }` instead of a token budget.
+ */
+export const THINKING_BY_ID_PREFIX = [
+  ['deepseek-', 'toggle'],
+  ['claude-', 'adaptive'],
+]
 
 /**
  * The group a model is listed under on the Add models page: its company, read

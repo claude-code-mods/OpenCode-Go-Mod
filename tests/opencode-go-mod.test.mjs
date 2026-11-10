@@ -8,16 +8,20 @@ import {dirname, join} from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 
-import {OTHER_GROUP, PROVIDERS, SESSION_HEADER, USER_AGENT_HEADER, VENDOR_GROUPS, VENDOR_PROVIDER_KEYS, WIRE_BY_FORMAT} from '../providers/config.js';
+import {CLIENT_HEADER, OTHER_GROUP, PROVIDERS, SESSION_HEADER, USER_AGENT_HEADER, VENDOR_GROUPS, VENDOR_PROVIDER_KEYS, WIRE_BY_FORMAT} from '../providers/config.js';
 import {
   baseUrlFromListing,
   buildModels,
   effortPatch,
+  formatBaseUrl,
   formatOf,
+  gatewayRootOf,
   isSessionHeader,
   mapUsage,
   providerKeyOf,
   sessionHeader,
+  thinkingStyleOf,
+  usageUrlOf,
   vendorGroupOf,
   verifyFromStatus,
 } from '../providers/logic.js';
@@ -70,7 +74,8 @@ const CATALOG = {
   'mimo-free': {name: 'mimo-free', toolCall: true, inputModalities: [], cost: {input: 0, output: 0}, free: true},
 };
 
-const GO_BASE = 'https://opencode.ai/zen/go/v1';
+const GO_BASE = 'https://opencode.ai/inference/go/openai/v1';
+const CLIENT = {'x-opencode-client': 'cli'};
 const rowsOf = (key, base, catalog = CATALOG) =>
     Object.fromEntries(buildModels({key, listing: LISTING, catalog, providerBaseUrl: base}).map(r => [r.id, r]));
 
@@ -102,17 +107,29 @@ test('a model without function calling says so; one the catalog lacks is assumed
   assert.equal(rows['mystery-1'].name, 'mystery-1');
 });
 
-test('the wire follows the model\'s npm: format, base URL, headers, compat', () => {
+test('the wire follows the model\'s npm: each API family on its own path under the gateway root, with the client header', () => {
   const rows = rowsOf('go', GO_BASE);
   assert.deepEqual(rows['glm-5.3'].wire, {
     format: 'openai-chat',
+    headers: CLIENT,
     compat: {maxTokensField: 'max_tokens', developerRole: false, reasoningReplay: 'reasoning_content'},
   });
-  assert.deepEqual(rows['gpt-6-luna'].wire, {format: 'openai-responses', compat: {developerRole: false}});
-  // The Anthropic SDK appends /v1 itself: the base loses it, the origin stays.
-  assert.deepEqual(rows['claude-sonnet-5-5'].wire, {format: 'anthropic-messages', baseUrl: 'https://opencode.ai/zen/go'});
-  // Google: the codec's own base, plus the header this vendor wants.
-  assert.deepEqual(rows['gemini-3-pro'].wire, {format: 'gemini', headers: {'x-goog-api-key': '{{secret:api_key}}'}});
+  assert.deepEqual(rows['gpt-6-luna'].wire, {format: 'openai-responses', headers: CLIENT, compat: {developerRole: false}});
+  assert.deepEqual(rows['claude-sonnet-5-5'].wire, {format: 'anthropic-messages', baseUrl: 'https://opencode.ai/inference/go/anthropic', headers: CLIENT});
+  assert.deepEqual(rows['gemini-3-pro'].wire, {
+    format: 'gemini', baseUrl: 'https://opencode.ai/inference/go/google/v1beta', headers: {'x-goog-api-key': '{{secret:api_key}}', ...CLIENT},
+  });
+});
+
+test('a single-path base URL keeps every family under it (the Anthropic one without /v1), and the usage document beside it', () => {
+  const rows = rowsOf('go', 'https://opencode.ai/zen/go/v1');
+  assert.equal(rows['glm-5.3'].wire.baseUrl, undefined);
+  assert.equal(rows['claude-sonnet-5-5'].wire.baseUrl, 'https://opencode.ai/zen/go');
+  assert.equal(rows['gemini-3-pro'].wire.baseUrl, undefined);
+  assert.equal(usageUrlOf('https://opencode.ai/zen/go/v1', PROVIDERS.go), 'https://opencode.ai/zen/go/v1/usage');
+  assert.equal(usageUrlOf(GO_BASE, PROVIDERS.go), 'https://opencode.ai/inference/go/v1/usage');
+  assert.equal(usageUrlOf(`${GO_BASE}/`, PROVIDERS.go), 'https://opencode.ai/inference/go/v1/usage');
+  assert.deepEqual(gatewayRootOf('http://127.0.0.1:7/inference/go/openai/v1'), {root: 'http://127.0.0.1:7/inference/go', layout: 'family'});
 });
 
 test('a model the catalog does not describe is routed by its id prefix, else chat', () => {
@@ -178,9 +195,12 @@ test('the manifest declares every company group, Other, a label per tag, and a w
     assert.ok(ui.starterModels.length > 0 && ui.starterModels.length <= 8, `${key}: starter models`);
     assert.ok(ui.tags.custom && !ui.tags.free && !ui.filters, `${key}: the page owns Free`);
     assert.deepEqual(Object.keys(ui.customModels.wires).sort(), Object.keys(WIRE_BY_FORMAT).sort());
-    // Anthropic's base is the provider's base without /v1, as wireOf trims it for listed models.
-    assert.equal(ui.customModels.wires['anthropic-messages'].baseUrlTrim, WIRE_BY_FORMAT['anthropic-messages'].baseUrlTrim);
-    assert.ok(ui.customModels.wires['anthropic-messages'].baseUrl === undefined, `${key}: the trim follows a base URL the person set`);
+    // A hand-added model goes where a listed model of its format goes, with the client header.
+    for (const format of Object.keys(WIRE_BY_FORMAT)) {
+      const wire = ui.customModels.wires[format];
+      assert.equal(wire.baseUrl ?? manifest.providers[key].defaultBaseUrl, formatBaseUrl(format, manifest.providers[key].defaultBaseUrl), `${key}: ${format} base`);
+      assert.equal(wire.headers['x-opencode-client'], CLIENT_HEADER.value, `${key}: ${format} client header`);
+    }
     assert.deepEqual(ui.tierModels, {fast: 'glm-5.3-flash'});
     assert.ok(ui.starterModels.includes(ui.tierModels.fast), `${key}: the fast tier's model is in the picker`);
   }
@@ -513,21 +533,49 @@ test('provider.models: a listing the server refuses fails the hook (the platform
   await assert.rejects(hooks().get('provider.models')($, {provider: 'mod.opencode-go.go'}), /503/);
 });
 
-test('provider.request: a request header that is new on every send, and the no-project header', async () => {
+test('provider.request: one session value under every name the gateway caches by, the same on every send', async () => {
   const $ = {provider: {deriveId: async (scope, input, options) => deriveId(scope, input, options)}};
   const request = hooks().get('provider.request');
-  const ask = (requestId) => request($, {provider: 'mod.opencode-go.go', format: 'openai-chat', context: {sessionId: 'session-A', requestId}});
+  const ask = (format, requestId) => request($, {provider: 'mod.opencode-go.go', format, context: {sessionId: 'session-A', requestId}});
 
-  const one = await ask('req-1');
-  assert.match(one.headers['x-opencode-request'], /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
-  assert.equal(one.headers['x-opencode-project'], 'global');
-  assert.equal((await ask('req-1')).headers['x-opencode-request'], one.headers['x-opencode-request'], 'one send, one id');
-  const two = await ask('req-2');
-  assert.notEqual(two.headers['x-opencode-request'], one.headers['x-opencode-request'], 'a new send has a new id');
-  assert.equal(two.headers['x-opencode-session'], one.headers['x-opencode-session'], 'the session header does not follow the send');
-  assert.ok(!one.headers['x-opencode-request'].includes('req-1'), 'the raw request id is not sent');
-  // The platform gave no request id: the optional header is left out.
-  assert.equal((await ask(undefined)).headers['x-opencode-request'], undefined);
+  const chat = await ask('openai-chat', 'req-1');
+  assert.deepEqual(Object.keys(chat.headers).sort(), ['x-opencode-session', 'x-session-affinity']);
+  assert.equal(chat.headers['x-session-affinity'], chat.headers['x-opencode-session']);
+  assert.equal(chat.patch, undefined);
+  // A new send of the same session carries the same value: the gateway keeps it on one cache.
+  assert.deepEqual((await ask('openai-chat', 'req-2')).headers, chat.headers);
+  assert.deepEqual((await ask('anthropic-messages', 'req-3')).headers, chat.headers);
+
+  const responses = await ask('openai-responses', 'req-4');
+  const value = chat.headers['x-opencode-session'];
+  assert.deepEqual(responses.headers, {'x-opencode-session': value, 'x-session-affinity': value, 'x-client-request-id': value});
+  assert.deepEqual(responses.patch, [{op: 'set', path: '/prompt_cache_key', value}]);
+});
+
+test('thinking: DeepSeek turns thinking on beside its effort; Claude thinks adaptively; others keep their wire\'s field', () => {
+  assert.equal(thinkingStyleOf('deepseek-v4-pro'), 'toggle');
+  assert.equal(thinkingStyleOf('claude-haiku-5-5'), 'adaptive');
+  assert.equal(thinkingStyleOf('minimax-m3'), undefined);
+  assert.deepEqual(effortPatch('openai-chat', 'high', 1000, 'deepseek-v4-pro'), [
+    {op: 'set', path: '/thinking', value: {type: 'enabled'}},
+    {op: 'set', path: '/reasoning_effort', value: 'high'},
+  ]);
+  assert.deepEqual(effortPatch('openai-chat', 'none', 1000, 'deepseek-v4.1-flash'), [{op: 'set', path: '/thinking', value: {type: 'disabled'}}]);
+  assert.deepEqual(effortPatch('anthropic-messages', 'extra-high', 128000, 'claude-haiku-5-5'), [
+    {op: 'set', path: '/thinking', value: {type: 'adaptive'}},
+    {op: 'set', path: '/output_config', value: {effort: 'xhigh'}},
+  ]);
+  assert.deepEqual(effortPatch('anthropic-messages', 'none', 128000, 'claude-haiku-5-5'), []);
+  // An Anthropic-wire model that is not Claude keeps the token budget.
+  assert.deepEqual(effortPatch('anthropic-messages', 'medium', 64000, 'qwen3.8-max'), [{op: 'set', path: '/thinking', value: {type: 'enabled', budget_tokens: 8192}}]);
+  assert.deepEqual(effortPatch('openai-chat', 'high', 1000, 'glm-5.3'), [{op: 'set', path: '/reasoning_effort', value: 'high'}]);
+});
+
+test('provider.request: the model decides how its tier is written', async () => {
+  const $ = {provider: {deriveId: async (scope, input, options) => deriveId(scope, input, options)}};
+  const request = hooks().get('provider.request');
+  const answer = await request($, {provider: 'mod.opencode-go.go', model: 'deepseek-v4-pro', format: 'openai-chat', effort: 'max', context: {sessionId: 's'}});
+  assert.deepEqual(answer.patch, [{op: 'set', path: '/thinking', value: {type: 'enabled'}}, {op: 'set', path: '/reasoning_effort', value: 'max'}]);
 });
 
 test('provider.request: the template sends no User-Agent of its own (the setting is empty)', async () => {
@@ -538,14 +586,16 @@ test('provider.request: the template sends no User-Agent of its own (the setting
   assert.equal(answer.headers['user-agent'], undefined);
 });
 
-test('provider.request: an honest client header and a stable, well-formed session header', async () => {
+test('provider.request: no client header of its own, and a stable, well-formed session header', async () => {
   const $ = {provider: {deriveId: async (scope, input, options) => deriveId(scope, input, options)}};
   const request = hooks().get('provider.request');
   const ask = (sessionId, extra = {}) => request($, {provider: 'mod.opencode-go.go', format: 'openai-chat', context: {sessionId}, ...extra});
 
   const first = await ask('session-A');
   assert.equal(SESSION_HEADER.name, 'x-opencode-session');
-  assert.equal(first.headers['x-opencode-client'], 'velloc');
+  // A header the hook writes is not masked afterwards, so it names no product.
+  assert.equal(first.headers['x-opencode-client'], undefined);
+  for (const value of Object.values(first.headers)) assert.ok(!/velloc/i.test(value), `header value ${value}`);
   assert.ok(isSessionHeader(first.headers['x-opencode-session']));
   assert.equal(first.headers['user-agent'], undefined, 'no borrowed User-Agent');
   assert.equal(first.patch, undefined);
@@ -575,7 +625,7 @@ test('provider.verify: the key is checked on the authenticated usage endpoint', 
   const verify = hooks().get('provider.verify');
 
   assert.deepEqual(await verify(answer(200), {provider: 'mod.opencode-go.go'}), {ok: true});
-  assert.deepEqual(seen[0], ['/usage', {authorization: 'Bearer {{secret:api_key}}'}]);
+  assert.deepEqual(seen[0], ['https://opencode.ai/inference/go/v1/usage', {authorization: 'Bearer {{secret:api_key}}'}]);
   assert.equal((await verify(answer(401), {provider: 'mod.opencode-go.go'})).code, 'auth_unauthorized');
   // The message is read from the plugin's locales/ in the language the event carries.
   const korean = {...answer(401), ...filesDollar([])};
@@ -589,12 +639,29 @@ test('provider.usage: the usage endpoint, with the key, becomes the three window
   const usage = hooks().get('provider.usage');
   const seen = [];
   const $ = {provider: {fetch: async (path, init) => (seen.push([path, init.headers]), response(200, GO_USAGE, 'u'))}};
-  const snapshot = await usage($, {provider: 'mod.opencode-go.go'});
-  assert.deepEqual(seen, [['/usage', {authorization: 'Bearer {{secret:api_key}}'}]]);
+  const snapshot = await usage($, {provider: 'mod.opencode-go.go', baseUrl: 'http://127.0.0.1:7/inference/go/openai/v1'});
+  assert.deepEqual(seen, [['http://127.0.0.1:7/inference/go/v1/usage', {authorization: 'Bearer {{secret:api_key}}'}]]);
   assert.deepEqual(snapshot.windows.map(w => w.kind), ['five_hour', 'weekly', 'monthly']);
   await assert.rejects(usage({provider: {fetch: async () => response(500, {}, 'u')}}, {provider: 'mod.opencode-go.go'}), /500/);
 });
 
 test('the module hooks exactly the events it documents (no sign, retry, ids or login)', () => {
   assert.deepEqual([...hooks().keys()].sort(), ['provider.models', 'provider.request', 'provider.usage', 'provider.verify']);
+});
+
+test('nothing the plugin sends names the product: wires of listed and hand-added models, and the request hook', async () => {
+  const product = /velloc/i;
+  for (const row of buildModels({key: 'go', listing: LISTING, catalog: CATALOG, providerBaseUrl: GO_BASE})) {
+    for (const value of Object.values(row.wire.headers ?? {})) assert.ok(!product.test(value), `${row.id}: ${value}`);
+  }
+  const manifest = JSON.parse(readFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'));
+  for (const [format, wire] of Object.entries(manifest.providers.go.modelsUi.customModels.wires)) {
+    for (const value of Object.values(wire.headers ?? {})) assert.ok(!product.test(value), `${format}: ${value}`);
+  }
+  const $ = {provider: {deriveId: async (scope, input, options) => deriveId(scope, input, options)}};
+  for (const format of ['openai-chat', 'openai-responses', 'anthropic-messages', 'gemini']) {
+    const answer = await hooks().get('provider.request')($, {provider: 'mod.opencode-go.go', format, effort: 'high', model: 'm', context: {sessionId: 's'}});
+    assert.ok(!product.test(JSON.stringify(answer)), format);
+  }
+  assert.equal(CLIENT_HEADER.value, 'cli');
 });

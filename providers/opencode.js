@@ -23,8 +23,8 @@
 //
 // All server-specific facts are in `config.js`; the logic is in `logic.js`.
 
-import { CLIENT_HEADER, LISTING_PATH, PROJECT_HEADER, PROVIDERS, REQUEST_HEADER, SESSION_HEADER, USER_AGENT_HEADER, VENDOR_PROVIDER_KEYS } from './config.js'
-import { baseUrlFromListing, buildModels, effortPatch, mapUsage, providerKeyOf, requestHeader, sessionHeader, vendorGroupOf, verifyFromStatus } from './logic.js'
+import { LISTING_PATH, PROVIDERS, SESSION_HEADER, USER_AGENT_HEADER, VENDOR_PROVIDER_KEYS } from './config.js'
+import { baseUrlFromListing, buildModels, effortPatch, mapUsage, providerKeyOf, sessionHeader, sessionHeaders, usageUrlOf, vendorGroupOf, verifyFromStatus } from './logic.js'
 import { textsFor } from './texts.js'
 
 /** The platform's `$` is not typed here; the calls used are listed in the comments above. */
@@ -62,16 +62,13 @@ export function register(on) {
   // effort, maxOutputTokens, context) — never the conversation. Answer
   // `headers` (a value of '' removes one) and/or `patch` (JSON Pointer edits
   // of the body).
+  // The session value goes out under every name the gateway routes and
+  // caches by; the client header rides in each model's `wire.headers`.
   on('provider.request', async ($, e) => {
-    const headers = {
-      [CLIENT_HEADER.name]: CLIENT_HEADER.value,
-      [SESSION_HEADER.name]: await sessionHeaderFor($, e),
-      [PROJECT_HEADER.name]: PROJECT_HEADER.value,
-    }
+    const session = sessionHeaders(e.format, await sessionValueFor($, e))
+    const headers = { ...session.headers }
     if (USER_AGENT_HEADER.value !== '') headers[USER_AGENT_HEADER.name] = USER_AGENT_HEADER.value
-    const request = await requestHeaderFor($, e)
-    if (request !== undefined) headers[REQUEST_HEADER.name] = request
-    const patch = effortPatch(e.format, e.effort, e.maxOutputTokens)
+    const patch = [...session.patch, ...effortPatch(e.format, e.effort, e.maxOutputTokens, e.model)]
     return patch.length > 0 ? { headers, patch } : { headers }
   })
 
@@ -86,7 +83,7 @@ export function register(on) {
     if (!facts || !facts.checkKeyWithUsage || !facts.usagePath) return undefined
     let response
     try {
-      response = await $.provider.fetch(facts.usagePath, {
+      response = await $.provider.fetch(usageUrlOf(e.baseUrl ?? facts.baseUrl, facts), {
         provider: e.provider,
         headers: { authorization: 'Bearer {{secret:api_key}}' },
         timeoutMs: 15000,
@@ -108,7 +105,7 @@ export function register(on) {
   on('provider.usage', async ($, e) => {
     const facts = PROVIDERS[providerKeyOf(e.provider)]
     if (!facts || !facts.usagePath) return { windows: [] }
-    const response = await $.provider.fetch(facts.usagePath, {
+    const response = await $.provider.fetch(usageUrlOf(e.baseUrl ?? facts.baseUrl, facts), {
       provider: e.provider,
       headers: { authorization: 'Bearer {{secret:api_key}}' },
     })
@@ -119,8 +116,8 @@ export function register(on) {
 
 // ── helpers that need `$` ─────────────────────────────────────────────────────
 
-/** Session ids already derived in this worker's life: {sessionId -> header}. */
-const sessionHeaders = new Map()
+/** Session values already derived in this worker's life: {sessionId -> value}. */
+const sessionValues = new Map()
 const SESSION_CACHE_MAX = 64
 
 /**
@@ -130,32 +127,18 @@ const SESSION_CACHE_MAX = 64
  * about Velloc's own id. A request that belongs to no session (a headless
  * run) all shares one fixed value.
  */
-async function sessionHeaderFor($, e) {
+async function sessionValueFor($, e) {
   const sessionId = typeof e.context?.sessionId === 'string' && e.context.sessionId !== '' ? e.context.sessionId : 'no-session'
   const cacheKey = `${e.provider}\u0000${sessionId}`
-  const cached = sessionHeaders.get(cacheKey)
+  const cached = sessionValues.get(cacheKey)
   if (cached !== undefined) return cached
   const options = { provider: e.provider }
   const hex = await $.provider.deriveId('session', sessionId, { ...options, format: 'hex', length: SESSION_HEADER.hexLength })
   const tail = await $.provider.deriveId('session.tail', sessionId, { ...options, format: 'base62', length: SESSION_HEADER.base62Length })
   const value = sessionHeader(hex, tail)
-  if (sessionHeaders.size >= SESSION_CACHE_MAX) sessionHeaders.delete(sessionHeaders.keys().next().value)
-  sessionHeaders.set(cacheKey, value)
+  if (sessionValues.size >= SESSION_CACHE_MAX) sessionValues.delete(sessionValues.keys().next().value)
+  sessionValues.set(cacheKey, value)
   return value
-}
-
-/**
- * The request header for this send, or undefined when the platform gave no
- * request id (the header is optional, so none is sent). Not cached: every send
- * has its own id.
- */
-async function requestHeaderFor($, e) {
-  const requestId = e.context?.requestId
-  if (typeof requestId !== 'string' || requestId === '') return undefined
-  const options = { provider: e.provider }
-  const hex = await $.provider.deriveId('request', requestId, { ...options, format: 'hex', length: REQUEST_HEADER.hexLength })
-  const tail = await $.provider.deriveId('request.tail', requestId, { ...options, format: 'base62', length: REQUEST_HEADER.base62Length })
-  return requestHeader(hex, tail)
 }
 
 /**

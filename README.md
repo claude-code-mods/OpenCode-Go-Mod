@@ -6,7 +6,7 @@ model list, always current, and the plan's usage windows.
 
 | Registered id | Name | Base URL | Credential |
 |---|---|---|---|
-| `mod.opencode-go.go` | OpenCode Go | `https://opencode.ai/zen/go/v1` | API key |
+| `mod.opencode-go.go` | OpenCode Go | `https://opencode.ai/inference/go/openai/v1` | API key |
 
 Get a key at [opencode.ai](https://opencode.ai/docs/console/go/) after
 subscribing to Go, Go Plus or Go Teams.
@@ -32,32 +32,47 @@ subscribing to Go, Go Plus or Go Teams.
   PDF input, price and the free flag. A model that entry lacks borrows its
   facts from the maker's own entry (`glm` → `zai`, `kimi` → `moonshotai`, …),
   never a price. A model nothing describes gets defaults and is still listed.
-- **Per-model wire format.** Go serves four API styles behind one key; each
-  model goes out in its own:
+- **Per-model wire format.** Go serves four API styles behind one key, each on
+  its own path under `https://opencode.ai/inference/go`; each model goes out in
+  its own:
 
-  | The model's `npm` in the catalog (else its id prefix) | Velloc wire | Path |
+  | The model's `npm` in the catalog (else its id prefix) | Velloc wire | Endpoint |
   |---|---|---|
-  | `@ai-sdk/openai-compatible` (default) | `openai-chat` | `<base>/chat/completions` |
-  | `@ai-sdk/openai` (`gpt-`, `grok-`) | `openai-responses` | `<base>/responses` |
-  | `@ai-sdk/anthropic` (`claude-`) | `anthropic-messages` | `<base minus /v1>/v1/messages` |
-  | `@ai-sdk/google` (`gemini-`) | `gemini` | `<base>/models/<id>:streamGenerateContent` |
+  | `@ai-sdk/openai-compatible` (default) | `openai-chat` | `…/openai/v1/chat/completions` |
+  | `@ai-sdk/openai` (`gpt-`, `grok-`, `muse-`) | `openai-responses` | `…/openai/v1/responses` |
+  | `@ai-sdk/anthropic` (`claude-`; also MiniMax M3, Qwen) | `anthropic-messages` | `…/anthropic/v1/messages` |
+  | `@ai-sdk/google` (`gemini-`) | `gemini` | `…/google/v1beta/models/<id>:streamGenerateContent` |
 
-- **Plan usage** (`provider.usage`): `GET /usage` with the key, shown as the
+  Chat models get `max_tokens` and the `system` role; a model that replays its
+  reasoning (catalog `interleaved`) gets `reasoning_content` back on earlier
+  assistant messages. A base URL set to a single-path gateway (such as
+  `https://opencode.ai/zen/go/v1`) keeps every family under it.
+
+- **Plan usage** (`provider.usage`): `GET https://opencode.ai/inference/go/v1/usage` with the key, shown as the
   **5-hour**, **weekly** and **monthly** windows, each with its percent used and
   its reset time. A window the gateway reports as `rate-limited` reads 100%.
 - **Key check** (`provider.verify`): the same authenticated `/usage` call, so a
   wrong key is reported as unauthorized right after Save.
-- **Session header** (`provider.request`): Go refuses a request without a
-  stable `x-opencode-session`. Every request carries one (`ses_` + 12 hex + 14
-  base62), derived from the Velloc session with the platform's keyed
-  derivation: stable across restarts, revealing nothing of Velloc's own id. A
-  request with no session (a headless run) gets one fixed value. Each send
-  also carries a fresh `x-opencode-request` id, `x-opencode-project: global`
-  and `x-opencode-client: velloc`.
-- **Thinking tiers**: a reasoning model offers Velloc's tiers (from the
-  catalog's `reasoningEfforts`, else low / medium / high); the request hook
-  writes `reasoning_effort`, `reasoning.effort` or an Anthropic `thinking`
-  budget.
+- **Session id and prompt caching** (`provider.request`): Go refuses a
+  request without `x-opencode-session` and routes and caches by it. One value
+  per Velloc session (`ses_` + 12 hex + 14 base62, derived with the platform's
+  keyed derivation: stable across restarts and sub-agents, revealing nothing of
+  Velloc's own id) goes out as `x-opencode-session` and `x-session-affinity` on
+  every request, and on the Responses wire also as `x-client-request-id` and
+  the body's `prompt_cache_key`. It never changes between turns, so the
+  conversation keeps hitting the same cache. The plugin never touches the
+  messages, system prompt or tools; Anthropic-wire requests get the platform's
+  own `cache_control` breakpoints. A request with no session (a headless run)
+  gets one fixed value.
+- **Client name**: `x-opencode-client: cli`, sent in each model's
+  `wire.headers` (`CLIENT_HEADER` in `providers/config.js`). The plugin writes
+  no product name into any header; the User-Agent is the platform's own.
+- **Thinking tiers**: a reasoning model offers the tiers the catalog lists for
+  it (GLM-5.3 low / high / max, Kimi K3 max only, …; else low / medium / high).
+  The request hook writes `reasoning_effort` (chat), `reasoning.effort`
+  (Responses) or an Anthropic `thinking` budget; DeepSeek also gets
+  `thinking: { type: enabled }` (`disabled` for the `none` tier), and Claude
+  thinks adaptively (`thinking: { type: adaptive }` with `output_config.effort`).
 - **Add models page**: models grouped by maker; free models (catalog `free`)
   under the platform's Free view; prices per 1M tokens; deprecated models kept
   with the **Deprecated** badge; **Add custom model** for an id the list does

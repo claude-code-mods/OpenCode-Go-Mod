@@ -19,7 +19,7 @@
         "en": "OpenCode Go"
       },
       "icon": "./icon.svg",
-      "defaultBaseUrl": "https://opencode.ai/zen/go/v1",
+      "defaultBaseUrl": "https://opencode.ai/inference/go/openai/v1",
       "domains": [
         "opencode.ai"
       ],
@@ -303,22 +303,33 @@
           ],
           "wires": {
             "openai-chat": {
+              "headers": {
+                "x-opencode-client": "cli"
+              },
               "compat": {
                 "maxTokensField": "max_tokens",
                 "developerRole": false
               }
             },
             "openai-responses": {
+              "headers": {
+                "x-opencode-client": "cli"
+              },
               "compat": {
                 "developerRole": false
               }
             },
             "anthropic-messages": {
-              "baseUrlTrim": "/v1"
+              "baseUrl": "https://opencode.ai/inference/go/anthropic",
+              "headers": {
+                "x-opencode-client": "cli"
+              }
             },
             "gemini": {
+              "baseUrl": "https://opencode.ai/inference/go/google/v1beta",
               "headers": {
-                "x-goog-api-key": "{{secret:api_key}}"
+                "x-goog-api-key": "{{secret:api_key}}",
+                "x-opencode-client": "cli"
               }
             }
           }
