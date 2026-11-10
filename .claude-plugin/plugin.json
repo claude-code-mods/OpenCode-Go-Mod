@@ -1,6 +1,6 @@
 {
   "name": "opencode-go",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenCode Go subscription models in Velloc: the gateway's live model list, plan usage windows and the session header the gateway requires.",
   "author": {
     "name": "VellocLabs"
