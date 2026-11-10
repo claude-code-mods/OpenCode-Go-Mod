@@ -1,0 +1,6 @@
+{
+  "plugin.description": "Modelos de la suscripción OpenCode Go: la lista de modelos en vivo de la pasarela, las ventanas de uso del plan y la cabecera de sesión que exige la pasarela.",
+  "keyRejected": "el servidor no aceptó esta clave",
+  "keyForbidden": "esta clave no tiene permiso para usar el servicio",
+  "serverAnswered": "el servidor respondió {status}"
+}

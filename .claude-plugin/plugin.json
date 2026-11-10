@@ -1,0 +1,339 @@
+{
+  "name": "opencode-go",
+  "version": "0.1.0",
+  "description": "OpenCode Go subscription models in Velloc: the gateway's live model list, plan usage windows and the session header the gateway requires.",
+  "author": {
+    "name": "VellocLabs"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "mod",
+    "provider",
+    "opencode",
+    "opencode-go"
+  ],
+  "providers": {
+    "go": {
+      "providerApi": 1,
+      "displayName": {
+        "en": "OpenCode Go"
+      },
+      "icon": "./icon.svg",
+      "defaultBaseUrl": "https://opencode.ai/zen/go/v1",
+      "domains": [
+        "opencode.ai"
+      ],
+      "format": "openai-chat",
+      "credentials": {
+        "methods": [
+          "apiKey"
+        ],
+        "prompts": [
+          {
+            "type": "text",
+            "key": "api_key",
+            "message": {
+              "en": "OpenCode Go API key",
+              "zh-CN": "OpenCode Go API 密钥",
+              "ja": "OpenCode Go API キー",
+              "ko": "OpenCode Go API 키",
+              "es": "Clave de API de OpenCode Go",
+              "fr": "Clé API OpenCode Go",
+              "de": "OpenCode Go API-Schlüssel"
+            },
+            "placeholder": {
+              "en": "Paste the key from your OpenCode account",
+              "zh-CN": "粘贴你的 OpenCode 账户中的密钥",
+              "ja": "OpenCode アカウントのキーを貼り付けてください",
+              "ko": "OpenCode 계정의 키를 붙여넣으세요",
+              "es": "Pegue la clave de su cuenta de OpenCode",
+              "fr": "Collez la clé de votre compte OpenCode",
+              "de": "Füge den Schlüssel aus deinem OpenCode-Konto ein"
+            },
+            "secret": true
+          }
+        ]
+      },
+      "modelsUi": {
+        "intro": {
+          "en": "Models are grouped by the company that makes them. Add one that is not listed with Add custom model.",
+          "zh-CN": "模型按其所属公司分组;未列出的模型可用“添加自定义模型”手动添加。",
+          "ja": "モデルは提供元の会社ごとに分類されています。一覧にないモデルは「カスタムモデルを追加」で追加できます。",
+          "ko": "모델은 만든 회사별로 묶여 있습니다. 목록에 없는 모델은 \"사용자 지정 모델 추가\"로 추가할 수 있습니다.",
+          "es": "Los modelos se agrupan por la empresa que los desarrolla; añada uno que no figure con «Añadir modelo personalizado».",
+          "fr": "Les modèles sont regroupés par entreprise ; ajoutez un modèle absent de la liste avec « Ajouter un modèle personnalisé ».",
+          "de": "Die Modelle sind nach dem Unternehmen gruppiert, das sie herstellt; ein nicht aufgeführtes Modell fügst du mit „Eigenes Modell hinzufügen“ hinzu."
+        },
+        "empty": {
+          "en": "No models listed. Check the key, then refresh the list.",
+          "zh-CN": "没有可用模型。请检查密钥,然后刷新列表。",
+          "ja": "利用できるモデルがありません。キーを確認してから、一覧を更新してください。",
+          "ko": "사용할 수 있는 모델이 없습니다. 키를 확인한 뒤 목록을 새로 고치세요.",
+          "es": "No hay modelos. Compruebe la clave y actualice la lista.",
+          "fr": "Aucun modèle listé. Vérifiez la clé, puis actualisez la liste.",
+          "de": "Keine Modelle aufgeführt. Prüfe den Schlüssel und aktualisiere die Liste."
+        },
+        "links": [
+          {
+            "label": {
+              "en": "OpenCode docs",
+              "zh-CN": "OpenCode 文档",
+              "ja": "OpenCode ドキュメント",
+              "ko": "OpenCode 문서",
+              "es": "Documentación de OpenCode",
+              "fr": "Documentation OpenCode",
+              "de": "OpenCode-Dokumentation"
+            },
+            "url": "https://opencode.ai/docs/zen/"
+          }
+        ],
+        "groups": {
+          "anthropic": {
+            "label": {
+              "en": "Anthropic",
+              "zh-CN": "Anthropic",
+              "ja": "Anthropic",
+              "ko": "Anthropic",
+              "es": "Anthropic",
+              "fr": "Anthropic",
+              "de": "Anthropic"
+            },
+            "order": 1
+          },
+          "openai": {
+            "label": {
+              "en": "OpenAI",
+              "zh-CN": "OpenAI",
+              "ja": "OpenAI",
+              "ko": "OpenAI",
+              "es": "OpenAI",
+              "fr": "OpenAI",
+              "de": "OpenAI"
+            },
+            "order": 2
+          },
+          "google": {
+            "label": {
+              "en": "Google",
+              "zh-CN": "Google",
+              "ja": "Google",
+              "ko": "Google",
+              "es": "Google",
+              "fr": "Google",
+              "de": "Google"
+            },
+            "order": 3
+          },
+          "xai": {
+            "label": {
+              "en": "xAI",
+              "zh-CN": "xAI",
+              "ja": "xAI",
+              "ko": "xAI",
+              "es": "xAI",
+              "fr": "xAI",
+              "de": "xAI"
+            },
+            "order": 4
+          },
+          "mistral": {
+            "label": {
+              "en": "Mistral",
+              "zh-CN": "Mistral",
+              "ja": "Mistral",
+              "ko": "Mistral",
+              "es": "Mistral",
+              "fr": "Mistral",
+              "de": "Mistral"
+            },
+            "order": 5
+          },
+          "deepseek": {
+            "label": {
+              "en": "DeepSeek",
+              "zh-CN": "DeepSeek",
+              "ja": "DeepSeek",
+              "ko": "DeepSeek",
+              "es": "DeepSeek",
+              "fr": "DeepSeek",
+              "de": "DeepSeek"
+            },
+            "order": 6
+          },
+          "zai": {
+            "label": {
+              "en": "Z.ai",
+              "zh-CN": "Z.ai",
+              "ja": "Z.ai",
+              "ko": "Z.ai",
+              "es": "Z.ai",
+              "fr": "Z.ai",
+              "de": "Z.ai"
+            },
+            "order": 7
+          },
+          "moonshot": {
+            "label": {
+              "en": "Moonshot AI",
+              "zh-CN": "Moonshot AI",
+              "ja": "Moonshot AI",
+              "ko": "Moonshot AI",
+              "es": "Moonshot AI",
+              "fr": "Moonshot AI",
+              "de": "Moonshot AI"
+            },
+            "order": 8
+          },
+          "minimax": {
+            "label": {
+              "en": "MiniMax",
+              "zh-CN": "MiniMax",
+              "ja": "MiniMax",
+              "ko": "MiniMax",
+              "es": "MiniMax",
+              "fr": "MiniMax",
+              "de": "MiniMax"
+            },
+            "order": 9
+          },
+          "alibaba": {
+            "label": {
+              "en": "Alibaba",
+              "zh-CN": "Alibaba",
+              "ja": "Alibaba",
+              "ko": "Alibaba",
+              "es": "Alibaba",
+              "fr": "Alibaba",
+              "de": "Alibaba"
+            },
+            "order": 10
+          },
+          "xiaomi": {
+            "label": {
+              "en": "Xiaomi",
+              "zh-CN": "Xiaomi",
+              "ja": "Xiaomi",
+              "ko": "Xiaomi",
+              "es": "Xiaomi",
+              "fr": "Xiaomi",
+              "de": "Xiaomi"
+            },
+            "order": 11
+          },
+          "nvidia": {
+            "label": {
+              "en": "NVIDIA",
+              "zh-CN": "NVIDIA",
+              "ja": "NVIDIA",
+              "ko": "NVIDIA",
+              "es": "NVIDIA",
+              "fr": "NVIDIA",
+              "de": "NVIDIA"
+            },
+            "order": 12
+          },
+          "stepfun": {
+            "label": {
+              "en": "StepFun",
+              "zh-CN": "StepFun",
+              "ja": "StepFun",
+              "ko": "StepFun",
+              "es": "StepFun",
+              "fr": "StepFun",
+              "de": "StepFun"
+            },
+            "order": 13
+          },
+          "meituan": {
+            "label": {
+              "en": "Meituan",
+              "zh-CN": "Meituan",
+              "ja": "Meituan",
+              "ko": "Meituan",
+              "es": "Meituan",
+              "fr": "Meituan",
+              "de": "Meituan"
+            },
+            "order": 14
+          },
+          "other": {
+            "label": {
+              "en": "Other",
+              "zh-CN": "其他",
+              "ja": "その他",
+              "ko": "기타",
+              "es": "Otros",
+              "fr": "Autres",
+              "de": "Weitere"
+            },
+            "order": 15
+          },
+          "custom": {
+            "label": {
+              "en": "Added by you",
+              "zh-CN": "我添加的",
+              "ja": "自分で追加",
+              "ko": "직접 추가함",
+              "es": "Añadidos por usted",
+              "fr": "Ajoutés par vous",
+              "de": "Von dir hinzugefügt"
+            },
+            "order": 16
+          }
+        },
+        "tags": {
+          "custom": {
+            "label": {
+              "en": "Custom",
+              "zh-CN": "自定义",
+              "ja": "カスタム",
+              "ko": "사용자 지정",
+              "es": "Personalizado",
+              "fr": "Personnalisé",
+              "de": "Eigen"
+            }
+          }
+        },
+        "customModels": {
+          "formats": [
+            "openai-chat",
+            "openai-responses",
+            "anthropic-messages",
+            "gemini"
+          ],
+          "wires": {
+            "openai-chat": {
+              "compat": {
+                "maxTokensField": "max_tokens",
+                "developerRole": false
+              }
+            },
+            "openai-responses": {
+              "compat": {
+                "developerRole": false
+              }
+            },
+            "anthropic-messages": {
+              "baseUrlTrim": "/v1"
+            },
+            "gemini": {
+              "headers": {
+                "x-goog-api-key": "{{secret:api_key}}"
+              }
+            }
+          }
+        },
+        "starterModels": [
+          "glm-5.3",
+          "kimi-k3",
+          "minimax-m3",
+          "glm-5.3-flash"
+        ],
+        "tierModels": {
+          "fast": "glm-5.3-flash"
+        }
+      },
+      "module": "./providers/opencode.js"
+    }
+  }
+}

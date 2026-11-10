@@ -1,0 +1,6 @@
+{
+  "plugin.description": "Modèles de l'abonnement OpenCode Go : la liste de modèles en direct de la passerelle, les fenêtres d'utilisation du forfait et l'en-tête de session qu'exige la passerelle.",
+  "keyRejected": "le serveur n’a pas accepté cette clé",
+  "keyForbidden": "cette clé n’est pas autorisée à utiliser le service",
+  "serverAnswered": "le serveur a répondu {status}"
+}

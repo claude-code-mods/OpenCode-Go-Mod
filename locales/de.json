@@ -1,0 +1,6 @@
+{
+  "plugin.description": "OpenCode-Go-Abo-Modelle: die Live-Modellliste des Gateways, die Nutzungsfenster des Plans und der Sitzungs-Header, den das Gateway verlangt.",
+  "keyRejected": "der Server hat diesen Schlüssel nicht akzeptiert",
+  "keyForbidden": "dieser Schlüssel darf den Dienst nicht nutzen",
+  "serverAnswered": "der Server antwortete mit {status}"
+}

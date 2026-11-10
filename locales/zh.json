@@ -1,0 +1,6 @@
+{
+  "plugin.description": "OpenCode Go 订阅模型：网关实时模型列表、套餐用量窗口，以及网关要求的会话请求头。",
+  "keyRejected": "服务器不接受此密钥",
+  "keyForbidden": "此密钥无权使用该服务",
+  "serverAnswered": "服务器返回了 {status}"
+}

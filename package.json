@@ -1,0 +1,13 @@
+{
+  "name": "opencode-go-mod",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The OpenCode Go plugin for Velloc: the Go subscription's models as a provider, with plan usage.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/opencode-go-mod.test.mjs"
+  }
+}

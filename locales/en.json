@@ -1,0 +1,5 @@
+{
+  "keyRejected": "the server did not accept this key",
+  "keyForbidden": "this key is not allowed to use the service",
+  "serverAnswered": "the server answered {status}"
+}
