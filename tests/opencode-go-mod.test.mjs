@@ -192,7 +192,7 @@ test('the manifest declares every company group, Other, a label per tag, and a w
   for (const key of ['go']) {
     const ui = manifest.providers[key].modelsUi;
     for (const group of [...VENDOR_GROUPS.map(v => v.group), OTHER_GROUP, 'custom']) assert.ok(ui.groups[group], `${key}: group ${group}`);
-    assert.ok(ui.starterModels.length > 0 && ui.starterModels.length <= 8, `${key}: starter models`);
+    assert.ok(ui.starterModels.length > 0 && ui.starterModels.length <= 16, `${key}: starter models`);
     assert.ok(ui.tags.custom && !ui.tags.free && !ui.filters, `${key}: the page owns Free`);
     assert.deepEqual(Object.keys(ui.customModels.wires).sort(), Object.keys(WIRE_BY_FORMAT).sort());
     // A hand-added model goes where a listed model of its format goes, with the client header.
@@ -204,6 +204,33 @@ test('the manifest declares every company group, Other, a label per tag, and a w
     assert.deepEqual(ui.tierModels, {fast: 'glm-5.3-flash'});
     assert.ok(ui.starterModels.includes(ui.tierModels.fast), `${key}: the fast tier's model is in the picker`);
   }
+});
+
+// Average of the catalog's input and output price per 1M tokens (USD) when the list was set.
+const STARTER_AVERAGE_PRICE = {
+  'iceman-contributor-free': 0, 'beam-free': 0, 'longcat-2.5-free': 0,
+  'muse-spark-1.3-contributor': 0.15, 'mimo-v2.6-flash': 0.21, 'gpt-6-luna': 0.3, 'claude-haiku-5-5': 0.3,
+  'glm-5.3-flash': 0.325, 'deepseek-v4.1-flash': 0.375, 'minimax-m3.1-flash': 0.375, 'qwen3.7-plus': 1,
+  'deepseek-v4-pro': 1.32, 'hy4': 1.6675, 'kimi-k3.1-pro': 6, 'kimi-k3': 9,
+};
+// Models the account must allow before they answer (region or training-endpoint setting).
+const ACCOUNT_RESTRICTED = new Set(['muse-spark-1.3-contributor', 'deepseek-v4.1-flash', 'deepseek-v4-pro', 'longcat-2.5-free']);
+// Free for a limited time: never the default, which must outlive them.
+const LIMITED_TIME = new Set(['iceman-contributor-free', 'beam-free', 'longcat-2.5-free']);
+
+test('starter models: the free ones and then the cheapest first; the first (the default) needs no account setting and is not limited-time', () => {
+  const manifest = JSON.parse(readFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'));
+  const starters = manifest.providers.go.modelsUi.starterModels;
+  assert.deepEqual([...starters].sort(), Object.keys(STARTER_AVERAGE_PRICE).sort());
+  assert.ok(!ACCOUNT_RESTRICTED.has(starters[0]), 'the default model works on a new account');
+  assert.ok(!LIMITED_TIME.has(starters[0]), 'the default model is not a limited-time free one');
+  const rest = starters.slice(1);
+  for (let i = 1; i < rest.length; i += 1) {
+    assert.ok(STARTER_AVERAGE_PRICE[rest[i - 1]] <= STARTER_AVERAGE_PRICE[rest[i]], `${rest[i - 1]} before ${rest[i]}`);
+  }
+  // Each starter is picked as its family's Latest, so no two may share a family.
+  const families = starters.map(id => id.replace(/\d+(?:[.-]\d+)*/, '*'));
+  assert.equal(new Set(families).size, starters.length);
 });
 
 // A `$` whose `fs.read` reads the plugin's files from disk, logging each path.

@@ -19,8 +19,24 @@ subscribing to Go, Go Plus or Go Teams.
 2. Settings → **Plugins & Mods** → **opencode-go** → on, then restart Velloc.
 3. Settings → **Models** → **Add provider** → **OpenCode Go** → paste the key →
    **Save**. The key is checked at once; a rejected key shows **Failed**.
-4. **Add models** lists everything the gateway serves. `glm-5.3`, `kimi-k3`,
-   `minimax-m3` and `glm-5.3-flash` are picked for you on the first connection.
+4. Fifteen models are picked for you on the first connection, each as its
+   family's **Latest** (so a newer version replaces it by itself), cheapest
+   first by the average of input and output price: MiMo-V2.6-Flash (the
+   default), the three free ones (Iceman Contributor Free, Beam Free,
+   LongCat 2.5 Free), Muse Spark 1.3 Contributor, GPT 6 Luna, Claude Haiku 5.5,
+   GLM-5.3-Flash, DeepSeek V4.1 Flash, MiniMax M3.1 Flash, Qwen3.7 Plus,
+   DeepSeek V4 Pro, Hy4, Kimi K3.1 Pro, Kimi K3. MiMo leads because the free
+   models are free for a limited time only and Muse Spark needs an account
+   setting. A free model is one the catalog prices at 0 for input and output;
+   it carries Velloc's Free mark. **Add models** lists
+   everything else the gateway serves.
+5. Some models answer only once the Go workspace allows them (Settings →
+   Privacy in the OpenCode console, owner or admin): DeepSeek V4.1 Flash,
+   DeepSeek V4 Pro and LongCat 2.5 Free need **Global** under Regions; Muse
+   Spark needs **Allow paid endpoints that train on request data**. Until then
+   they answer HTTP 400. Beam Free is not served in some countries, China
+   included. Fifteen starters need Velloc's 16-starter limit; an
+   older Velloc that allows 8 refuses the manifest.
 
 ## What it does
 
